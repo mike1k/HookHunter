@@ -9,7 +9,7 @@ In addition, HookHunter is also capable of following generic hooks to their fina
 
 HookHunter also allows a few other options.
 * The `mod` argument allows specified modules to be scanned. By default, HookHunter searches the entire set of loaded modules.
-* The `dump` argument allows HookHunter to spit out the patched and unpatched variants of a modified image, making it simple to throw the binary into a disassembler for furhter analysis.
+* The `dump` argument allows HookHunter to spit out the patched and unpatched variants of a modified image, making it simple to throw the binary into a disassembler for further analysis.
 * The `pecheck` argument tells HookHunter to read a custom image's imports (usually a DLL), and alert you if you're using an import that the process is currently hooking.
 * The `heal` argument tells HookHunter to begin repairing known patches and hooks to their original variant (be wary of using this option on X86, see notes in Main/etc).
 * The `verbose` argument allows explicit logging of HookHunter's current scan.
