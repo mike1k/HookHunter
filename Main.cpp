@@ -31,6 +31,11 @@ int main(int argc, char* argv[])
                 if (szArg[0] != '\'')
                 {
                     cfg.ProcessId = std::atoi(szArg);
+                    if (cfg.ProcessId == 0)
+                    {
+                        g_log->critical("Invalid process id '{}'", szArg);
+                        return EXIT_FAILURE;
+                    }
                 }
                 else
                 {
@@ -43,7 +48,7 @@ int main(int argc, char* argv[])
                         if (std::chrono::duration_cast<std::chrono::milliseconds>(sw.elapsed()).count() > 10000)
                         {
                             g_log->critical("Timed out searching for process {}.", argProc);
-                            return 0;
+                            return EXIT_FAILURE;
                         }
 
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -132,5 +137,5 @@ int main(int argc, char* argv[])
     }
     
 
-    return 0;
+    return EXIT_SUCCESS;
 }

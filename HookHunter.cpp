@@ -72,7 +72,7 @@ void HookHunter::BeginScanning()
 				; // logger->info("Read memory at {} with size {}", mbi.BaseAddress, mbi.RegionSize);
 			else
 				// Log the faliure, but that is all. We will still try to parse.
-				g_log->critical("Unable to read memory at {:X}", mbi.BaseAddress);
+				g_log->critical("Unable to read memory at {:X}", (std::uintptr_t)mbi.BaseAddress);
 
 			_lastSize += mbi.RegionSize;
 

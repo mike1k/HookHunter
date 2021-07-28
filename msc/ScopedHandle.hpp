@@ -1,8 +1,10 @@
 #pragma once
 
+#include <pepp/misc/NonCopyable.hpp>
+
 namespace hh::nt
 {
-	class ScopedHandle
+	class ScopedHandle : pepp::msc::NonCopyable
 	{
 		HANDLE m_handle = INVALID_HANDLE_VALUE;
 
@@ -11,7 +13,7 @@ namespace hh::nt
 
 
 		ScopedHandle(HANDLE handle)
-			: m_handle(handle)
+			: m_handle(handle ? handle : INVALID_HANDLE_VALUE)
 		{
 		}
 
@@ -41,7 +43,7 @@ namespace hh::nt
 			if (m_handle != INVALID_HANDLE_VALUE)
 				CloseHandle(m_handle);
 
-			m_handle = rhs;
+			m_handle = rhs ? rhs : INVALID_HANDLE_VALUE;
 		}
 	};
 }
