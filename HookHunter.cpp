@@ -1,5 +1,53 @@
 #include "HookHunter.hpp"
- 
+
+extern "C"
+NTSYSCALLAPI
+ULONG
+NTAPI
+NtSuspendProcess(
+	_In_ HANDLE ProcessHandle
+);
+
+extern "C"
+NTSYSCALLAPI
+ULONG
+NTAPI
+NtResumeProcess(
+	_In_ HANDLE ProcessHandle
+);
+
+#pragma comment(lib, "ntdll.lib")
+
+class ScopedSuspender : public pepp::msc::NonCopyable
+{
+	DWORD m_processId = 0;
+	HANDLE m_handle = nullptr;
+
+public:
+	ScopedSuspender(DWORD processId, HANDLE handle)
+		: m_processId(processId)
+		, m_handle(handle)
+	{
+		auto status = NtSuspendProcess(m_handle);
+		if (status != 0)
+		{
+			g_log->critical("Unable to suspend process {}, status {:X}", m_processId, status);
+			m_handle = nullptr;
+		}
+	}
+
+	~ScopedSuspender()
+	{
+		if (m_handle)
+		{
+			auto status = NtResumeProcess(m_handle);
+			if (status != 0)
+			{
+				g_log->critical("Unable to resume process {}, status {:X}", m_processId, status);
+			}
+		}
+	}
+};
 
 #ifdef _WIN64
 static constexpr auto REGISTER_IP = ZYDIS_REGISTER_RIP;
@@ -24,8 +72,9 @@ void HookHunter::BeginScanning()
 		return;
 	}
 
-	g_log->info("Attached to process {}", cfg.ProcessId);
+	ScopedSuspender s(cfg.ProcessId, m_process.handle());
 
+	g_log->info("Attached to process {}", cfg.ProcessId);
 
 	//
 	// Process all DLLs if none were explicitly defined
