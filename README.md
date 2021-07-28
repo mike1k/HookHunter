@@ -29,6 +29,7 @@ Usage:  hookhunter
 
 ![CSGO](https://i.imgur.com/p0CyVfe.png)
 ![DESTINY2](https://i.imgur.com/l6FSUUk.png)
+![FIREFOX](https://i.imgur.com/Oxi29mK.png)
 
 # Dependencies
 * [Zydis](https://github.com/zyantific/zydis)
