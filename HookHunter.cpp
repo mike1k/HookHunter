@@ -28,6 +28,11 @@ public:
 		: m_processId(processId)
 		, m_handle(handle)
 	{
+		if (!handle)
+		{
+			return;
+		}
+
 		auto status = NtSuspendProcess(m_handle);
 		if (status != 0)
 		{
@@ -77,34 +82,38 @@ void HookHunter::BeginScanning()
 	g_log->info("Attached to process {}", cfg.ProcessId);
 
 	//
+	// Gather all modules, we need them for symbols.
+	if (!HhFindModulesInProcess(m_process.handle(), m_moduleList))
+	{
+		g_log->critical("Unable to enumerate process' modules");
+		return;
+	}
+
+	//
 	// Process all DLLs if none were explicitly defined
 	if (cfg.ModuleList.empty())
 	{
-		if (!HhFindModulesInProcess(m_process.handle(), m_moduleList))
-		{
-			g_log->critical("Unable to enumerate process' modules");
-			return;
-		}
+		m_scanModuleList = m_moduleList;
 	}
 	else
 	{
 		g_log->info("Using custom module list.");
 
-		if (!HhFindNamedModulesInProcess(m_process.handle(), cfg.ModuleList, m_moduleList))
+		if (!HhFindNamedModulesInProcess(m_process.handle(), cfg.ModuleList, m_scanModuleList))
 		{
 			g_log->critical("Unable to enumerate process' modules");
 			return;
 		}
 	}
 
-	if (m_moduleList.empty())
+	if (m_scanModuleList.empty())
 	{
 		g_log->critical("Module list was empty..");
 		return;
 	}
 
 
-	for (auto const& mod : m_moduleList)
+	for (auto const& mod : m_scanModuleList)
 	{
 		hh::Address _moduleAddress = mod.base_address;
 		std::size_t _lastSize = 0;
@@ -165,7 +174,7 @@ void HookHunter::BeginScanning()
 											_curMemOffset{};
 					std::vector<JmpInfo_t>	jmp{};
 					JmpInfo_t				_jmpInfo{};
-
+					std::unordered_map<int, std::uintptr_t> _regSet;
 
 					//
 					// Fetch both file and memory instructions
@@ -188,8 +197,23 @@ void HookHunter::BeginScanning()
 							break;
 #endif
 						//
+						// Trace registers used for JMPs
+						// e.g mov r10, #address; jmp r10
+						if (_mInsn.mnemonic == ZYDIS_MNEMONIC_MOV)
+						{
+							if (_mInsn.operand_count == 2)
+							{
+								if (_mInsn.operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
+									_mInsn.operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+								{
+									_regSet[_mInsn.operands[0].reg.value] = _mInsn.operands[1].imm.value.u;
+								}
+							}
+						}
+
+						//
 						// Chain JMPs
-						if (_mInsn.mnemonic == ZYDIS_MNEMONIC_JMP)
+						else if (_mInsn.mnemonic == ZYDIS_MNEMONIC_JMP)
 						{
 							ZydisDecodedInstruction tmp_instr{};
 							ZyanU64 ptr = (mod.base_address + _mappedOffset + _curMemOffset);
@@ -208,6 +232,12 @@ void HookHunter::BeginScanning()
 							{
 								if (_mInsn.operands[0].mem.disp.has_displacement)
 									ptr = _mInsn.operands[0].mem.disp.value;
+							}
+							else if (_mInsn.operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER)
+							{
+								std::uintptr_t imm = _regSet[_mInsn.operands[0].reg.value];
+								if (imm > 0)
+									ptr = imm;
 							}
 
 							//
@@ -339,10 +369,57 @@ void HookHunter::BeginScanning()
 												}
 												break;
 											}
+											case ZYDIS_OPERAND_TYPE_REGISTER:
+											{
+												ptr = _regSet[_mInsn.operands[0].reg.value];
+												if (ptr > 0)
+												{
+													if (GetModuleFromAddress(ptr, &_tmp))
+													{
+														_jmpInfo.dst_ptr = ptr;
+														_jmpInfo.dst_rva = (ptr - _tmp.base_address);
+														_jmpInfo.dst_module = std::filesystem::path(_tmp.module_path).filename().string();
+													}
+													else
+													{
+														MEMORY_BASIC_INFORMATION _tmpMbi{};
+														if (VirtualQueryEx(m_process.handle(), (void*)ptr, &_tmpMbi, sizeof(_tmpMbi)))
+														{
+															_jmpInfo.dst_rva = ptr - (std::uintptr_t)_tmpMbi.AllocationBase;
+															_jmpInfo.dst_module = fmt::format("memory@{:X}",
+																(std::uintptr_t)_tmpMbi.AllocationBase);
+															_jmpInfo.dst_ptr = ptr;
+														}
+													}
+
+													jmp.emplace_back(std::move(_jmpInfo));
+													_patchBytes.push_raw(tmp_buf, tmp_instr.length);
+												}
+												else
+												{
+													tmp_val = false;
+												}
+
+												break;
+											}
 											default:
 												tmp_val = false;
 												break;
 											}
+										}
+										else if (tmp_instr.mnemonic == ZYDIS_MNEMONIC_MOV)
+										{
+											if (tmp_instr.operand_count == 2)
+											{
+												if (tmp_instr.operands[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
+													tmp_instr.operands[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
+												{
+													_regSet[tmp_instr.operands[0].reg.value] = tmp_instr.operands[1].imm.value.u;
+													break;
+												}
+											}
+
+											tmp_val = false;
 										}
 										else
 										{
@@ -572,7 +649,7 @@ void HookHunter::DissassembleBuffer(std::uintptr_t runtime_address, ZyanU8* data
 		buffer.append(fmt::format("{:<32}", MakeByteString(data, instruction.length)));
 		buffer.append(tmp);
 
-		if (jmps && !jmps->empty() && jmps->front().dst_ptr != 0)
+		if (jmps && !jmps->empty() && jmps->front().dst_ptr != 0 && instruction.mnemonic == ZYDIS_MNEMONIC_JMP)
 		{
 			buffer.append(fmt::format(" ; jmp <{}+{:X}>", jmps->front().dst_module, jmps->front().dst_rva));
 			jmps->erase(jmps->begin());

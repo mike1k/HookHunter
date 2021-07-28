@@ -22,7 +22,7 @@ bool Process::CreateHandle(std::uint32_t processId, std::uint32_t flags) noexcep
 }
 
 // ReadProcessMemory will fail if the page has PAGE_NOACCESS or PAGE_GUARD, so try to change the protection and then read
-static bool ReadPage(HANDLE handle, LPVOID address, LPVOID buffer, std::size_t size, std::size_t* bytesRead)
+static bool ReadPage(HANDLE handle, LPVOID address, LPVOID buffer, std::size_t size, SIZE_T* bytesRead)
 {
 	if (!ReadProcessMemory(handle, address, buffer, size, bytesRead))
 	{
@@ -53,7 +53,7 @@ bool Process::ReadMemory(Address<> address, void* buffer, std::size_t size) noex
 
 	while (readSize)
 	{
-		std::size_t bytesReadSafe = 0;
+		SIZE_T bytesReadSafe = 0;
 		auto readSuccess = ReadPage(m_handle, (PVOID)(address.uintptr() + offset), (PBYTE)buffer + offset, readSize, &bytesReadSafe);
 		bytesRead += bytesReadSafe;
 		if (!readSuccess)

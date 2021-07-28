@@ -89,6 +89,7 @@ private:
 	ZydisDecoder							m_decoder;
 	hh::nt::Process		m_process;
 	std::map<std::string, std::vector<Mismatch_t>>	m_mismatches;
+	std::vector<ModuleInformation_t> m_scanModuleList;
 	std::vector<ModuleInformation_t> m_moduleList;
 };
 
